@@ -1,0 +1,9 @@
+{
+  "name": "meatmarket-cowork-plugin",
+  "version": "1.3.0",
+  "description": "MCP server for the MeatMarket.fun API",
+  "main": "meatmarket-mcp.js",
+  "scripts": {
+    "start": "node meatmarket-mcp.js"
+  }
+}
