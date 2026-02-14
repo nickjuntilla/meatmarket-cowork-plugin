@@ -2,53 +2,136 @@
 /**
  * MeatMarket MCP Server (stdio, JSON-RPC 2.0)
  *
- * Exposes every MeatMarket.fun API endpoint as an MCP tool so Claude can
- * search workers, post jobs, review proofs, send messages, and more.
- *
- * Zero external dependencies — uses only Node.js built-ins.
+ * Exposes every MeatMarket.fun API endpoint as an MCP tool, plus an
+ * integrated EVM hot wallet for optional automatic payment settlement.
  */
 
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const { ethers } = require("ethers");
 
-// ── Configuration ──────────────────────────────────────────────────────────
+// ── Chain & token configuration ────────────────────────────────────────────
+
+const CHAINS = {
+  ethereum: {
+    rpc: "https://eth.llamarpc.com",
+    explorer: "https://etherscan.io",
+    chainId: 1,
+  },
+  base: {
+    rpc: "https://mainnet.base.org",
+    explorer: "https://basescan.org",
+    chainId: 8453,
+  },
+  optimism: {
+    rpc: "https://mainnet.optimism.io",
+    explorer: "https://optimistic.etherscan.io",
+    chainId: 10,
+  },
+  arbitrum: {
+    rpc: "https://arb1.arbitrum.io/rpc",
+    explorer: "https://arbiscan.io",
+    chainId: 42161,
+  },
+};
+
+// USDC addresses per chain
+const USDC = {
+  ethereum: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  optimism: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+  arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+};
+
+// pyUSD addresses per chain (only on ethereum and base currently)
+const PYUSD = {
+  ethereum: "0x6c3ea9036406852006290770BeDFcAbA0e23A0e8",
+  base: "0x6c3ea9036406852006290770BeDFcAbA0e23A0e8",
+};
+
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+];
+
+// ── Credentials & wallet state ─────────────────────────────────────────────
+
 const CREDENTIALS_PATH = path.join(__dirname, ".credentials.json");
 const API_HOST = "meatmarket.fun";
 const API_BASE = "/api/v1";
 
-// Load credentials: env vars take priority, then fall back to saved file
 let API_KEY = process.env.MEATMARKET_API_KEY || "";
 let AI_ID = process.env.MEATMARKET_AI_ID || "";
+let WALLET_KEY = "";
+let WALLET_ADDRESS = "";
+let CHAIN = "base";
+let AUTO_PAY = false;
+let AUTO_ACCEPT_CANDIDATES = false;
 
-if (!API_KEY || !AI_ID) {
-  try {
-    const saved = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
-    if (!API_KEY && saved.api_key) API_KEY = saved.api_key;
-    if (!AI_ID && saved.ai_id) AI_ID = saved.ai_id;
-  } catch {
-    // No saved credentials — that's fine, user can register via /meatmarket-initialize
-  }
+// Load saved state
+try {
+  const saved = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
+  if (!API_KEY && saved.api_key) API_KEY = saved.api_key;
+  if (!AI_ID && saved.ai_id) AI_ID = saved.ai_id;
+  if (saved.wallet_private_key) WALLET_KEY = saved.wallet_private_key;
+  if (saved.wallet_address) WALLET_ADDRESS = saved.wallet_address;
+  if (saved.chain && CHAINS[saved.chain]) CHAIN = saved.chain;
+  if (typeof saved.auto_pay === "boolean") AUTO_PAY = saved.auto_pay;
+  if (typeof saved.auto_accept_candidates === "boolean") AUTO_ACCEPT_CANDIDATES = saved.auto_accept_candidates;
+} catch {
+  // No saved state yet
 }
 
-function saveCredentials(apiKey, aiId) {
+function saveState() {
   try {
     fs.writeFileSync(
       CREDENTIALS_PATH,
-      JSON.stringify({ api_key: apiKey, ai_id: aiId }, null, 2) + "\n"
+      JSON.stringify(
+        {
+          api_key: API_KEY,
+          ai_id: AI_ID,
+          wallet_private_key: WALLET_KEY,
+          wallet_address: WALLET_ADDRESS,
+          chain: CHAIN,
+          auto_pay: AUTO_PAY,
+          auto_accept_candidates: AUTO_ACCEPT_CANDIDATES,
+        },
+        null,
+        2
+      ) + "\n"
     );
   } catch (e) {
-    process.stderr.write(`Warning: could not save credentials: ${e.message}\n`);
+    process.stderr.write(`Warning: could not save state: ${e.message}\n`);
   }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+function initWalletIfNeeded() {
+  if (!WALLET_KEY) {
+    const wallet = ethers.Wallet.createRandom();
+    WALLET_KEY = wallet.privateKey;
+    WALLET_ADDRESS = wallet.address;
+    saveState();
+    return { created: true, address: WALLET_ADDRESS };
+  }
+  return { created: false, address: WALLET_ADDRESS };
+}
 
-function apiRequest(method, path, body) {
+function getWallet() {
+  if (!WALLET_KEY) return null;
+  const chainCfg = CHAINS[CHAIN];
+  const provider = new ethers.JsonRpcProvider(chainCfg.rpc, chainCfg.chainId);
+  return new ethers.Wallet(WALLET_KEY, provider);
+}
+
+// ── HTTP helpers ───────────────────────────────────────────────────────────
+
+function apiRequest(method, apiPath, body) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: API_HOST,
-      path: `${API_BASE}${path}`,
+      path: `${API_BASE}${apiPath}`,
       method,
       headers: {
         "Content-Type": "application/json",
@@ -75,20 +158,17 @@ function apiRequest(method, path, body) {
 }
 
 function err(id, msg) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    error: { code: -32000, message: msg },
-  };
+  return { jsonrpc: "2.0", id, error: { code: -32000, message: msg } };
 }
 
 // ── Tool definitions ───────────────────────────────────────────────────────
 
 const TOOLS = [
+  // ─ Account ─
   {
     name: "register",
     description:
-      "Register a new AI entity with MeatMarket. Returns an API key and entity ID. A verification email will be sent to the provided address.",
+      "Register a new AI entity with MeatMarket. Returns an API key and entity ID. Also generates an EVM hot wallet. A verification email will be sent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -98,6 +178,62 @@ const TOOLS = [
       required: ["email", "name"],
     },
   },
+
+  // ─ Wallet & settings ─
+  {
+    name: "wallet_balance",
+    description:
+      "Show the hot wallet's public address and balances (ETH, USDC, pyUSD) on the current chain.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_chain",
+    description:
+      "Switch the active blockchain. Affects wallet balance lookups and auto-pay transactions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chain: {
+          type: "string",
+          enum: ["ethereum", "base", "optimism", "arbitrum"],
+          description: "The chain to switch to",
+        },
+      },
+      required: ["chain"],
+    },
+  },
+  {
+    name: "set_auto_pay",
+    description:
+      "Toggle automatic payment. When enabled, accepting a proof will automatically send the payment from the hot wallet. When disabled, you must pay manually and provide a transaction link.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: {
+          type: "boolean",
+          description: "true to enable auto-pay, false to disable",
+        },
+      },
+      required: ["enabled"],
+    },
+  },
+  {
+    name: "set_auto_accept_candidates",
+    description:
+      "Toggle automatic candidate acceptance. When enabled, the AI will evaluate applicants and automatically hire the best match. When disabled, the AI evaluates but asks the user before hiring.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: {
+          type: "boolean",
+          description: "true to auto-accept candidates, false to require manual approval",
+        },
+      },
+      required: ["enabled"],
+    },
+  },
+
+  // ─ Workforce ─
   {
     name: "search_humans",
     description:
@@ -122,6 +258,8 @@ const TOOLS = [
       required: ["human_id"],
     },
   },
+
+  // ─ Jobs ─
   {
     name: "post_job",
     description:
@@ -139,7 +277,7 @@ const TOOLS = [
         pay_amount: { type: "number", description: "Payment amount in USD" },
         blockchain: {
           type: "string",
-          enum: ["Base", "Ethereum", "Optimism", "Arbitrum", "Polygon"],
+          enum: ["Base", "Ethereum", "Optimism", "Arbitrum"],
           description: "Blockchain for payment settlement",
         },
         time_limit_hours: {
@@ -159,7 +297,8 @@ const TOOLS = [
   },
   {
     name: "delete_job",
-    description: "Delete an open job posting. Only works when the job status is 'open'.",
+    description:
+      "Delete an open job posting. Only works when the job status is 'open'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -183,6 +322,8 @@ const TOOLS = [
       required: ["job_id", "human_id"],
     },
   },
+
+  // ─ Proofs & payment ─
   {
     name: "get_proofs",
     description: "Retrieve submitted proof-of-work for a specific job.",
@@ -204,7 +345,8 @@ const TOOLS = [
         job_id: { type: "string", description: "The job ID" },
         feedback: {
           type: "string",
-          description: "Detailed feedback on what needs to change (min 10 chars)",
+          description:
+            "Detailed feedback on what needs to change (min 10 chars)",
         },
       },
       required: ["job_id", "feedback"],
@@ -213,65 +355,80 @@ const TOOLS = [
   {
     name: "mark_payment_sent",
     description:
-      "Mark a job as paid by providing the on-chain transaction link.",
+      "Mark a job as paid by providing the on-chain transaction link. Use this for manual payments.",
     inputSchema: {
       type: "object",
       properties: {
         job_id: { type: "string", description: "The job ID" },
         transaction_link: {
           type: "string",
-          description: "URL to the blockchain transaction (e.g. https://basescan.org/tx/0x...)",
+          description:
+            "URL to the blockchain transaction (e.g. https://basescan.org/tx/0x...)",
         },
       },
       required: ["job_id", "transaction_link"],
     },
   },
   {
+    name: "accept_proof_autopay",
+    description:
+      "Send payment from the hot wallet after the AI has verified a proof meets all job requirements. Sends a USDC or pyUSD transfer on the current chain to the worker's wallet, then records the transaction link on MeatMarket. Called by the /meatmarket-check evaluation pipeline — not directly by users. Returns an error if the wallet has insufficient funds or gas.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "The job ID to pay" },
+        worker_wallet: {
+          type: "string",
+          description: "The worker's EVM wallet address (0x...)",
+        },
+        amount: {
+          type: "number",
+          description: "Payment amount in token units (e.g. 50 for 50 USDC)",
+        },
+        token: {
+          type: "string",
+          enum: ["USDC", "pyUSD"],
+          description: "Which stablecoin to pay with (default: USDC)",
+        },
+      },
+      required: ["job_id", "worker_wallet", "amount"],
+    },
+  },
+
+  // ─ Dashboard ─
+  {
     name: "my_jobs",
     description:
       "Audit your full state: all jobs, their applicants, submitted proofs, and wallet info. Great for getting an overview of everything.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
+    inputSchema: { type: "object", properties: {} },
   },
+
+  // ─ Reviews ─
   {
     name: "submit_review",
-    description: "Rate and review a human worker's performance after a job is done.",
+    description:
+      "Rate and review a human worker's performance after a job is done.",
     inputSchema: {
       type: "object",
       properties: {
         job_id: { type: "string", description: "The job ID" },
-        human_id: {
-          type: "string",
-          description: "The human worker's ID",
-        },
-        rating: {
-          type: "number",
-          description: "Rating score (1 to 5)",
-        },
-        comment: {
-          type: "string",
-          description: "Optional written review",
-        },
+        human_id: { type: "string", description: "The human worker's ID" },
+        rating: { type: "number", description: "Rating score (1 to 5)" },
+        comment: { type: "string", description: "Optional written review" },
       },
       required: ["job_id", "human_id", "rating"],
     },
   },
+
+  // ─ Messaging ─
   {
     name: "send_message",
     description: "Send a direct message to a human worker.",
     inputSchema: {
       type: "object",
       properties: {
-        receiver_id: {
-          type: "string",
-          description: "The human worker's ID",
-        },
-        content: {
-          type: "string",
-          description: "Message content",
-        },
+        receiver_id: { type: "string", description: "The human worker's ID" },
+        content: { type: "string", description: "Message content" },
         job_id: {
           type: "string",
           description: "Optional job ID for context",
@@ -283,11 +440,10 @@ const TOOLS = [
   {
     name: "get_messages",
     description: "Retrieve your recent inbound messages from human workers.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
+    inputSchema: { type: "object", properties: {} },
   },
+
+  // ─ Direct offers ─
   {
     name: "send_offer",
     description:
@@ -301,7 +457,7 @@ const TOOLS = [
         pay_amount: { type: "number", description: "Payment amount in USD" },
         blockchain: {
           type: "string",
-          enum: ["Base", "Ethereum", "Optimism", "Arbitrum", "Polygon"],
+          enum: ["Base", "Ethereum", "Optimism", "Arbitrum"],
           description: "Blockchain for payment",
         },
         time_limit_hours: {
@@ -342,26 +498,237 @@ const NO_CREDENTIALS_MSG =
   "MeatMarket is not set up yet. Run /meatmarket-initialize first to register and save your API credentials.";
 
 async function callTool(name, args) {
-  // Allow register without credentials; everything else requires them
-  if (name !== "register" && !API_KEY) {
+  // Allow register and wallet_balance without API key
+  const NO_AUTH_TOOLS = ["register", "wallet_balance", "set_chain", "set_auto_pay", "set_auto_accept_candidates"];
+  if (!NO_AUTH_TOOLS.includes(name) && !API_KEY) {
     return { status: 401, body: { error: NO_CREDENTIALS_MSG } };
   }
 
   switch (name) {
+    // ── Account ──────────────────────────────────────────────────────────
     case "register": {
       const res = await apiRequest("POST", "/register", {
         email: args.email,
         name: args.name,
       });
-      // Auto-save credentials on successful registration
       if (res.status < 400 && res.body && res.body.api_key) {
         API_KEY = res.body.api_key;
         AI_ID = res.body.ai_id || "";
-        saveCredentials(API_KEY, AI_ID);
+        const walletInfo = initWalletIfNeeded();
+        saveState();
+        res.body.wallet_address = WALLET_ADDRESS;
+        res.body.wallet_created = walletInfo.created;
+        res.body.chain = CHAIN;
+        res.body.auto_pay = AUTO_PAY;
       }
       return res;
     }
 
+    // ── Wallet & settings ────────────────────────────────────────────────
+    case "wallet_balance": {
+      if (!WALLET_KEY) {
+        return {
+          status: 200,
+          body: {
+            error: "No wallet configured. Run /meatmarket-initialize to create one.",
+          },
+        };
+      }
+
+      const wallet = getWallet();
+      const chainCfg = CHAINS[CHAIN];
+      const result = {
+        address: WALLET_ADDRESS,
+        chain: CHAIN,
+        explorer: `${chainCfg.explorer}/address/${WALLET_ADDRESS}`,
+        auto_pay: AUTO_PAY,
+        balances: {},
+      };
+
+      try {
+        const ethBal = await wallet.provider.getBalance(WALLET_ADDRESS);
+        result.balances.ETH = ethers.formatEther(ethBal);
+      } catch (e) {
+        result.balances.ETH = `error: ${e.message}`;
+      }
+
+      // USDC
+      if (USDC[CHAIN]) {
+        try {
+          const usdc = new ethers.Contract(USDC[CHAIN], ERC20_ABI, wallet.provider);
+          const bal = await usdc.balanceOf(WALLET_ADDRESS);
+          const dec = await usdc.decimals();
+          result.balances.USDC = ethers.formatUnits(bal, dec);
+        } catch (e) {
+          result.balances.USDC = `error: ${e.message}`;
+        }
+      } else {
+        result.balances.USDC = "not available on this chain";
+      }
+
+      // pyUSD
+      if (PYUSD[CHAIN]) {
+        try {
+          const py = new ethers.Contract(PYUSD[CHAIN], ERC20_ABI, wallet.provider);
+          const bal = await py.balanceOf(WALLET_ADDRESS);
+          const dec = await py.decimals();
+          result.balances.pyUSD = ethers.formatUnits(bal, dec);
+        } catch (e) {
+          result.balances.pyUSD = `error: ${e.message}`;
+        }
+      } else {
+        result.balances.pyUSD = "not available on this chain";
+      }
+
+      return { status: 200, body: result };
+    }
+
+    case "set_chain": {
+      const chain = args.chain?.toLowerCase();
+      if (!CHAINS[chain]) {
+        return {
+          status: 400,
+          body: {
+            error: `Invalid chain "${args.chain}". Must be one of: ${Object.keys(CHAINS).join(", ")}`,
+          },
+        };
+      }
+      CHAIN = chain;
+      saveState();
+      return {
+        status: 200,
+        body: {
+          success: true,
+          chain: CHAIN,
+          message: `Switched to ${CHAIN}. Wallet balance lookups and auto-pay will now use this chain.`,
+        },
+      };
+    }
+
+    case "set_auto_pay": {
+      AUTO_PAY = !!args.enabled;
+      saveState();
+      return {
+        status: 200,
+        body: {
+          success: true,
+          auto_pay: AUTO_PAY,
+          message: AUTO_PAY
+            ? "Auto-pay enabled. When you accept a proof, the plugin will automatically send payment from the hot wallet."
+            : "Auto-pay disabled. You will need to send payment manually and provide the transaction link.",
+        },
+      };
+    }
+
+    case "set_auto_accept_candidates": {
+      AUTO_ACCEPT_CANDIDATES = !!args.enabled;
+      saveState();
+      return {
+        status: 200,
+        body: {
+          success: true,
+          auto_accept_candidates: AUTO_ACCEPT_CANDIDATES,
+          message: AUTO_ACCEPT_CANDIDATES
+            ? "Auto-accept candidates enabled. The AI will evaluate applicants and automatically hire the best match for each job."
+            : "Auto-accept candidates disabled. The AI will evaluate applicants but ask you before hiring anyone.",
+        },
+      };
+    }
+
+    // ── Auto-pay proof acceptance ────────────────────────────────────────
+    case "accept_proof_autopay": {
+      if (!WALLET_KEY) {
+        return {
+          status: 400,
+          body: {
+            error:
+              "No wallet configured. Run /meatmarket-initialize first, then fund your wallet.",
+          },
+        };
+      }
+
+      const token = (args.token || "USDC").toUpperCase();
+      const tokenAddresses = token === "PYUSD" ? PYUSD : USDC;
+      const tokenAddress = tokenAddresses[CHAIN];
+
+      if (!tokenAddress) {
+        return {
+          status: 400,
+          body: {
+            error: `${token} is not available on ${CHAIN}. Switch chains with set_chain or pay manually.`,
+          },
+        };
+      }
+
+      const wallet = getWallet();
+      const chainCfg = CHAINS[CHAIN];
+
+      try {
+        const contract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+        const decimals = await contract.decimals();
+        const amountUnits = ethers.parseUnits(args.amount.toString(), decimals);
+
+        // Check balance before sending
+        const balance = await contract.balanceOf(WALLET_ADDRESS);
+        if (balance < amountUnits) {
+          const balFormatted = ethers.formatUnits(balance, decimals);
+          return {
+            status: 400,
+            body: {
+              error: `Insufficient ${token} balance. Wallet has ${balFormatted} ${token} but the payment requires ${args.amount} ${token}. Fund the wallet at ${WALLET_ADDRESS} on ${CHAIN}, or pay manually.`,
+              wallet_address: WALLET_ADDRESS,
+              chain: CHAIN,
+              current_balance: balFormatted,
+              required: args.amount.toString(),
+            },
+          };
+        }
+
+        // Send the transfer
+        const tx = await contract.transfer(args.worker_wallet, amountUnits);
+        const receipt = await tx.wait();
+        const txLink = `${chainCfg.explorer}/tx/${receipt.hash}`;
+
+        // Record on MeatMarket
+        const apiRes = await apiRequest("PATCH", `/jobs/${args.job_id}`, {
+          status: "payment_sent",
+          transaction_link: txLink,
+        });
+
+        return {
+          status: 200,
+          body: {
+            success: true,
+            tx_hash: receipt.hash,
+            tx_link: txLink,
+            amount: args.amount,
+            token,
+            chain: CHAIN,
+            worker_wallet: args.worker_wallet,
+            api_recorded: apiRes.status < 400,
+            message: `Payment of ${args.amount} ${token} sent successfully on ${CHAIN}.`,
+          },
+        };
+      } catch (e) {
+        const msg = e.message || String(e);
+        // Detect common failure modes
+        let advice = "Fund the wallet or pay manually instead.";
+        if (msg.includes("insufficient funds")) {
+          advice = `The wallet doesn't have enough ETH for gas fees on ${CHAIN}. Send some ETH to ${WALLET_ADDRESS} and try again, or pay manually.`;
+        }
+        return {
+          status: 500,
+          body: {
+            error: `Auto-pay failed: ${msg}`,
+            advice,
+            wallet_address: WALLET_ADDRESS,
+            chain: CHAIN,
+          },
+        };
+      }
+    }
+
+    // ── Workforce ────────────────────────────────────────────────────────
     case "search_humans": {
       const params = new URLSearchParams();
       if (args.skill) params.set("skill", args.skill);
@@ -374,6 +741,7 @@ async function callTool(name, args) {
     case "get_human_profile":
       return apiRequest("GET", `/humans/${args.human_id}`);
 
+    // ── Jobs ─────────────────────────────────────────────────────────────
     case "post_job":
       return apiRequest("POST", "/jobs", args);
 
@@ -386,6 +754,7 @@ async function callTool(name, args) {
         human_id: args.human_id,
       });
 
+    // ── Proofs & manual payment ──────────────────────────────────────────
     case "get_proofs":
       return apiRequest("GET", `/jobs/${args.job_id}/proofs`);
 
@@ -400,9 +769,11 @@ async function callTool(name, args) {
         transaction_link: args.transaction_link,
       });
 
+    // ── Dashboard ────────────────────────────────────────────────────────
     case "my_jobs":
       return apiRequest("GET", "/myjobs");
 
+    // ── Reviews ──────────────────────────────────────────────────────────
     case "submit_review":
       return apiRequest("POST", "/reviews", {
         job_id: args.job_id,
@@ -412,6 +783,7 @@ async function callTool(name, args) {
         comment: args.comment || "",
       });
 
+    // ── Messaging ────────────────────────────────────────────────────────
     case "send_message": {
       const body = { receiver_id: args.receiver_id, content: args.content };
       if (args.job_id) body.job_id = args.job_id;
@@ -421,6 +793,7 @@ async function callTool(name, args) {
     case "get_messages":
       return apiRequest("GET", "/messages");
 
+    // ── Offers ───────────────────────────────────────────────────────────
     case "send_offer":
       return apiRequest("POST", "/offers", args);
 
@@ -446,13 +819,13 @@ async function handleMessage(msg) {
         id,
         result: {
           protocolVersion: "2024-11-05",
-          serverInfo: { name: "meatmarket", version: "1.3.0" },
+          serverInfo: { name: "meatmarket", version: "1.5.0" },
           capabilities: { tools: {} },
         },
       };
 
     case "notifications/initialized":
-      return null; // no response needed for notifications
+      return null;
 
     case "tools/list":
       return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
@@ -470,10 +843,7 @@ async function handleMessage(msg) {
         return {
           jsonrpc: "2.0",
           id,
-          result: {
-            content: [{ type: "text", text }],
-            isError,
-          },
+          result: { content: [{ type: "text", text }], isError },
         };
       } catch (e) {
         return err(id, e.message);
@@ -500,7 +870,7 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", async (chunk) => {
   buffer += chunk;
   const lines = buffer.split("\n");
-  buffer = lines.pop(); // keep incomplete trailing line in buffer
+  buffer = lines.pop();
 
   for (const line of lines) {
     if (!line.trim()) continue;

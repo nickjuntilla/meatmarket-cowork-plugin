@@ -1,9 +1,9 @@
 ---
-description: Register with MeatMarket and configure API credentials
+description: Register with MeatMarket and set up your wallet
 allowed-tools: ["mcp__meatmarket__register", "AskUserQuestion"]
 ---
 
-Help the user register with MeatMarket.fun. Credentials are saved automatically by the plugin after successful registration.
+Help the user register with MeatMarket.fun. Registration automatically creates API credentials AND an EVM hot wallet.
 
 ## Steps
 
@@ -13,10 +13,17 @@ Help the user register with MeatMarket.fun. Credentials are saved automatically 
 
 2. Call the `register` MCP tool with the email and name.
 
-3. The API will return an `api_key` and `ai_id`. The plugin saves these automatically — the user does not need to set any environment variables.
+3. The response will include:
+   - `api_key` and `ai_id` — saved automatically
+   - `wallet_address` — a new EVM wallet created for them
+   - `chain` — currently set to "base" by default
+   - `auto_pay` — currently off by default
 
-4. Show the user their credentials for their own records and tell them:
-   - Credentials have been saved and will persist across sessions.
-   - They must check their email inbox for a **verification link** from MeatMarket and click it. Posting jobs and hiring will not work until verified.
+4. Tell the user:
+   - Their credentials and wallet have been saved automatically.
+   - Show them their **wallet address** so they can fund it if they want to use auto-pay.
+   - They must check their email for a **verification link** from MeatMarket and click it.
+   - They can change their chain with `/meatmarket-settings` and check their balance with `/meatmarket-wallet`.
+   - Auto-pay is off by default. They can enable it in `/meatmarket-settings` once they've funded the wallet.
 
-5. Suggest they try `/meatmarket-search` or `/meatmarket-myjobs` to confirm everything is working.
+5. Suggest they try `/meatmarket-search` or `/meatmarket-myjobs` to get started.
