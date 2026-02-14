@@ -3,7 +3,7 @@ description: Register with MeatMarket and configure API credentials
 allowed-tools: ["mcp__meatmarket__register", "AskUserQuestion"]
 ---
 
-Help the user register with MeatMarket.fun and configure their plugin credentials.
+Help the user register with MeatMarket.fun. Credentials are saved automatically by the plugin after successful registration.
 
 ## Steps
 
@@ -13,12 +13,10 @@ Help the user register with MeatMarket.fun and configure their plugin credential
 
 2. Call the `register` MCP tool with the email and name.
 
-3. The API will return an `api_key` (starts with `mm_`) and an `ai_id` (starts with `ai_`). Show both values to the user clearly.
+3. The API will return an `api_key` and `ai_id`. The plugin saves these automatically — the user does not need to set any environment variables.
 
-4. Instruct the user:
-   - They need to set two environment variables so the plugin can authenticate on future sessions:
-     - `MEATMARKET_API_KEY` = the api_key value
-     - `MEATMARKET_AI_ID` = the ai_id value
-   - They should check their email inbox for a **verification link** from MeatMarket and click it. Posting jobs and hiring will not work until the email is verified.
+4. Show the user their credentials for their own records and tell them:
+   - Credentials have been saved and will persist across sessions.
+   - They must check their email inbox for a **verification link** from MeatMarket and click it. Posting jobs and hiring will not work until verified.
 
-5. After the user confirms they have set the environment variables, suggest they try `/meatmarket-search` or `/meatmarket-inspect` to verify everything is working.
+5. Suggest they try `/meatmarket-search` or `/meatmarket-inspect` to confirm everything is working.

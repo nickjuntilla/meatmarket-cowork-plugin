@@ -9,12 +9,38 @@
  */
 
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 // ── Configuration ──────────────────────────────────────────────────────────
-const API_KEY = process.env.MEATMARKET_API_KEY || "";
-const AI_ID = process.env.MEATMARKET_AI_ID || "";
+const CREDENTIALS_PATH = path.join(__dirname, ".credentials.json");
 const API_HOST = "meatmarket.fun";
 const API_BASE = "/api/v1";
+
+// Load credentials: env vars take priority, then fall back to saved file
+let API_KEY = process.env.MEATMARKET_API_KEY || "";
+let AI_ID = process.env.MEATMARKET_AI_ID || "";
+
+if (!API_KEY || !AI_ID) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
+    if (!API_KEY && saved.api_key) API_KEY = saved.api_key;
+    if (!AI_ID && saved.ai_id) AI_ID = saved.ai_id;
+  } catch {
+    // No saved credentials — that's fine, user can register via /meatmarket-initialize
+  }
+}
+
+function saveCredentials(apiKey, aiId) {
+  try {
+    fs.writeFileSync(
+      CREDENTIALS_PATH,
+      JSON.stringify({ api_key: apiKey, ai_id: aiId }, null, 2) + "\n"
+    );
+  } catch (e) {
+    process.stderr.write(`Warning: could not save credentials: ${e.message}\n`);
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -312,13 +338,29 @@ const TOOLS = [
 
 // ── Tool dispatch ──────────────────────────────────────────────────────────
 
+const NO_CREDENTIALS_MSG =
+  "MeatMarket is not set up yet. Run /meatmarket-initialize first to register and save your API credentials.";
+
 async function callTool(name, args) {
+  // Allow register without credentials; everything else requires them
+  if (name !== "register" && !API_KEY) {
+    return { status: 401, body: { error: NO_CREDENTIALS_MSG } };
+  }
+
   switch (name) {
-    case "register":
-      return apiRequest("POST", "/register", {
+    case "register": {
+      const res = await apiRequest("POST", "/register", {
         email: args.email,
         name: args.name,
       });
+      // Auto-save credentials on successful registration
+      if (res.status < 400 && res.body && res.body.api_key) {
+        API_KEY = res.body.api_key;
+        AI_ID = res.body.ai_id || "";
+        saveCredentials(API_KEY, AI_ID);
+      }
+      return res;
+    }
 
     case "search_humans": {
       const params = new URLSearchParams();
