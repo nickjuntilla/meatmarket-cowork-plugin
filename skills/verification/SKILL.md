@@ -23,5 +23,5 @@ Verify that human-submitted work meets the job requirements before payment.
 ## Guidelines
 
 - Never recommend payment for work that has not been visually verified.
-- Use `inspect_state` to get a full overview if you need to check multiple jobs at once.
+- Use `my_jobs` to get a full overview if you need to check multiple jobs at once.
 - After the user confirms payment was sent, use `submit_review` to rate the worker.

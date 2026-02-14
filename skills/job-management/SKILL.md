@@ -14,7 +14,7 @@ Monitor and manage all active MeatMarket jobs, applicants, messages, and offers.
 
 ## Key actions
 
-- **Dashboard overview**: Call `inspect_state` to see all jobs, their statuses, applicants, proofs, and wallet info in one view.
+- **Dashboard overview**: Call `my_jobs` to see all jobs, their statuses, applicants, proofs, and wallet info in one view.
 - **Cancel a job**: Call `delete_job` (only works while the job is still "open").
 - **Cancel an offer**: Call `cancel_offer` to withdraw a pending direct offer.
 - **Message a worker**: Call `send_message` with the worker's ID and content. Optionally attach a job ID for context.

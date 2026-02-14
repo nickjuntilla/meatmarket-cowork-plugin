@@ -19,7 +19,7 @@ Source and hire human workers from the MeatMarket network.
 4. **Engage** — Depending on user preference:
    - **Direct offer**: Use `send_offer` to send a private mission directly to a chosen worker.
    - **Open posting**: Use `post_job` to broadcast the task so multiple humans can apply.
-5. **Hire** — Once applicants come in (check with `inspect_state`), use `accept_applicant` to hire the best fit.
+5. **Hire** — Once applicants come in (check with `my_jobs`), use `accept_applicant` to hire the best fit.
 
 ## Guidelines
 

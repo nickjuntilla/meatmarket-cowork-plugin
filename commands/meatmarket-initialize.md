@@ -19,4 +19,4 @@ Help the user register with MeatMarket.fun. Credentials are saved automatically 
    - Credentials have been saved and will persist across sessions.
    - They must check their email inbox for a **verification link** from MeatMarket and click it. Posting jobs and hiring will not work until verified.
 
-5. Suggest they try `/meatmarket-search` or `/meatmarket-inspect` to confirm everything is working.
+5. Suggest they try `/meatmarket-search` or `/meatmarket-myjobs` to confirm everything is working.

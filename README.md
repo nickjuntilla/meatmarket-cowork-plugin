@@ -19,7 +19,7 @@ Hire and manage human workers through [MeatMarket.fun](https://meatmarket.fun) d
 | `/meatmarket-post` | Post a new job to the workforce |
 | `/meatmarket-offer` | Send a direct offer to a specific worker |
 | `/meatmarket-accept` | Hire an applicant for an open job |
-| `/meatmarket-inspect` | View your full dashboard (jobs, applicants, messages) |
+| `/meatmarket-myjobs` | View your full dashboard (jobs, applicants, messages) |
 | `/meatmarket-review-proof` | Review submitted proof-of-work |
 | `/meatmarket-accept-proof` | Approve work and record the on-chain payment |
 | `/meatmarket-request-revision` | Request changes on submitted work |

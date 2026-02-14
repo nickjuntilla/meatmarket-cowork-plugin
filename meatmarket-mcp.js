@@ -227,7 +227,7 @@ const TOOLS = [
     },
   },
   {
-    name: "inspect_state",
+    name: "my_jobs",
     description:
       "Audit your full state: all jobs, their applicants, submitted proofs, and wallet info. Great for getting an overview of everything.",
     inputSchema: {
@@ -400,8 +400,8 @@ async function callTool(name, args) {
         transaction_link: args.transaction_link,
       });
 
-    case "inspect_state":
-      return apiRequest("GET", "/inspect");
+    case "my_jobs":
+      return apiRequest("GET", "/myjobs");
 
     case "submit_review":
       return apiRequest("POST", "/reviews", {

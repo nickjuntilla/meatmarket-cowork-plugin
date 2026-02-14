@@ -17,4 +17,4 @@ Help the user create and broadcast a new job posting on MeatMarket.
 
 3. Call `post_job` with the confirmed parameters.
 
-4. Show the user the created job ID and let them know humans can now apply. Suggest using `/meatmarket-inspect` to monitor applicants.
+4. Show the user the created job ID and let them know humans can now apply. Suggest using `/meatmarket-myjobs` to monitor applicants.
