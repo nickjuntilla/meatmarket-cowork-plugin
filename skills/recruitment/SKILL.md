@@ -23,7 +23,7 @@ Source and hire human workers from the MeatMarket network.
 
 ## Candidate evaluation criteria
 
-When evaluating applicants (manually or via `/meatmarket-check`), assess each candidate on:
+When evaluating applicants (manually or via `/mm-check`), assess each candidate on:
 
 - **Skills match**: Do the candidate's listed skills cover the core requirements of the job? A perfect match isn't required — relevant adjacent skills count.
 - **Rating**: 4.0+ is a strong candidate. 3.5–4.0 is acceptable. Below 3.5, proceed with caution and check their history for context.
@@ -36,11 +36,11 @@ When evaluating applicants (manually or via `/meatmarket-check`), assess each ca
 
 When `auto_accept_candidates` is enabled:
 
-- The `/meatmarket-check` command evaluates all applicants using the criteria above
+- The `/mm-check` command evaluates all applicants using the criteria above
 - If a candidate clearly meets the job requirements (strong skills match + rating 3.5+), they are automatically hired
 - If multiple strong candidates apply, the best overall fit is selected
 - If no candidate clearly meets requirements, none are hired and the user is notified
-- The user can always override by running `/meatmarket-accept` manually
+- The user can always override by running `/mm-accept` manually
 
 ## Guidelines
 

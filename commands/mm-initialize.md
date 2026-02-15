@@ -21,10 +21,11 @@ Help the user register with MeatMarket.fun. Registration automatically creates A
    - `credentials_saved_to` — the full path where credentials were saved
 
 4. Tell the user:
-   - Their credentials are saved automatically. They can run `/meatmarket-backup` at any time to download a backup file with their API key, wallet private key, and settings. **Recommend they do this now** — the private key controls any funds in their wallet.
+   - Their credentials are saved automatically. They can run `/mm-backup` at any time to download a backup file with their API key, wallet private key, and settings. **Recommend they do this now** — the private key controls any funds in their wallet.
    - Show them their **wallet address** so they can fund it if they want to use auto-pay.
    - They must check their email for a **verification link** from MeatMarket and click it.
-   - They can change their chain with `/meatmarket-settings` and check their balance with `/meatmarket-wallet`.
-   - Auto-pay is off by default. They can enable it in `/meatmarket-settings` once they've funded the wallet.
+   - They can change their chain with `/mm-settings` and check their balance with `/mm-wallet`.
+   - Auto-pay is off by default. They can enable it in `/mm-settings` once they've funded the wallet.
+   - When posting jobs or sending offers, they can choose **pyUSD** as the payment type. This lets workers who use **PayPal or Venmo** accept the job and cash out without dealing with crypto wallets.
 
-5. Suggest they try `/meatmarket-search` or `/meatmarket-myjobs` to get started.
+5. Suggest they try `/mm-search` or `/mm-myjobs` to get started.

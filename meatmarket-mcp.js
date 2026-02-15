@@ -57,38 +57,53 @@ const ERC20_ABI = [
 ];
 
 // ── Credentials & wallet state ─────────────────────────────────────────────
+//
+// The installed plugin directory is read-only, so credentials are saved to
+// a JSON file inside the user's workspace:
+//   <workspace>/.claude/meatmarket/credentials.json
+//
+// CLAUDE_CONFIG_DIR is passed through .mcp.json and points to <workspace>/.claude
+// To find your workspace folder: in the Claude desktop app, look at the folder
+// name shown at the top of the Cowork panel. Your credentials are inside that
+// folder at .claude/meatmarket/credentials.json
 
-// Save credentials to a writable location. Installed plugins may live in a
-// read-only directory, so __dirname is not reliable for writes.  We prefer:
-//   1. $MEATMARKET_DATA_DIR (if explicitly set)
-//   2. ~/.meatmarket/ (user home — always writable)
-const DATA_DIR = process.env.MEATMARKET_DATA_DIR ||
-  path.join(process.env.HOME || process.env.USERPROFILE || "/tmp", ".meatmarket");
-try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* may already exist */ }
-const CREDENTIALS_PATH = path.join(DATA_DIR, "credentials.json");
 const API_HOST = "meatmarket.fun";
 const API_BASE = "/api/v1";
 
-let API_KEY = process.env.MEATMARKET_API_KEY || "";
-let AI_ID = process.env.MEATMARKET_AI_ID || "";
+// Resolve a writable data directory for credentials
+const DATA_DIR = (() => {
+  // CLAUDE_CONFIG_DIR is the most reliable path — passed via .mcp.json
+  if (process.env.CLAUDE_CONFIG_DIR) {
+    return path.join(process.env.CLAUDE_CONFIG_DIR, "meatmarket");
+  }
+  // Fallback for non-Cowork environments
+  return path.join(process.env.HOME || process.env.USERPROFILE || "/tmp", ".meatmarket");
+})();
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* may already exist */ }
+const CREDENTIALS_PATH = path.join(DATA_DIR, "credentials.json");
+
+let API_KEY = "";
+let AI_ID = "";
 let WALLET_KEY = "";
 let WALLET_ADDRESS = "";
 let CHAIN = "base";
 let AUTO_PAY = false;
 let AUTO_ACCEPT_CANDIDATES = false;
+let DEFAULT_TOKEN = "USDC"; // "USDC" or "pyUSD"
 
 // Load saved state
 try {
   const saved = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
-  if (!API_KEY && saved.api_key) API_KEY = saved.api_key;
-  if (!AI_ID && saved.ai_id) AI_ID = saved.ai_id;
+  if (saved.api_key) API_KEY = saved.api_key;
+  if (saved.ai_id) AI_ID = saved.ai_id;
   if (saved.wallet_private_key) WALLET_KEY = saved.wallet_private_key;
   if (saved.wallet_address) WALLET_ADDRESS = saved.wallet_address;
   if (saved.chain && CHAINS[saved.chain]) CHAIN = saved.chain;
   if (typeof saved.auto_pay === "boolean") AUTO_PAY = saved.auto_pay;
   if (typeof saved.auto_accept_candidates === "boolean") AUTO_ACCEPT_CANDIDATES = saved.auto_accept_candidates;
+  if (saved.default_token === "USDC" || saved.default_token === "pyUSD") DEFAULT_TOKEN = saved.default_token;
 } catch {
-  // No saved state yet
+  // No saved state yet — first run
 }
 
 function saveState() {
@@ -104,13 +119,14 @@ function saveState() {
           chain: CHAIN,
           auto_pay: AUTO_PAY,
           auto_accept_candidates: AUTO_ACCEPT_CANDIDATES,
+          default_token: DEFAULT_TOKEN,
         },
         null,
         2
       ) + "\n"
     );
   } catch (e) {
-    process.stderr.write(`Warning: could not save state to ${CREDENTIALS_PATH}: ${e.message}\n`);
+    process.stderr.write(`Warning: could not save credentials to ${CREDENTIALS_PATH}: ${e.message}\n`);
   }
 }
 
@@ -237,6 +253,22 @@ const TOOLS = [
         },
       },
       required: ["enabled"],
+    },
+  },
+  {
+    name: "set_default_token",
+    description:
+      "Set the default payment token for new jobs and offers. USDC is standard crypto stablecoin. pyUSD enables PayPal and Venmo compatibility — workers can cash out without a crypto wallet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token: {
+          type: "string",
+          enum: ["USDC", "pyUSD"],
+          description: "Default payment token. Use pyUSD for PayPal/Venmo compatibility.",
+        },
+      },
+      required: ["token"],
     },
   },
 
@@ -514,11 +546,11 @@ const TOOLS = [
 // ── Tool dispatch ──────────────────────────────────────────────────────────
 
 const NO_CREDENTIALS_MSG =
-  "MeatMarket is not set up yet. Run /meatmarket-initialize first to register and save your API credentials.";
+  "MeatMarket is not set up yet. Run /mm-initialize first to register and save your API credentials.";
 
 async function callTool(name, args) {
-  // Allow register and wallet_balance without API key
-  const NO_AUTH_TOOLS = ["register", "wallet_balance", "set_chain", "set_auto_pay", "set_auto_accept_candidates"];
+  // Allow register and local settings tools without API key
+  const NO_AUTH_TOOLS = ["register", "wallet_balance", "set_chain", "set_auto_pay", "set_auto_accept_candidates", "set_default_token"];
   if (!NO_AUTH_TOOLS.includes(name) && !API_KEY) {
     return { status: 401, body: { error: NO_CREDENTIALS_MSG } };
   }
@@ -539,6 +571,7 @@ async function callTool(name, args) {
         res.body.wallet_created = walletInfo.created;
         res.body.chain = CHAIN;
         res.body.auto_pay = AUTO_PAY;
+        res.body.credentials_saved_to = CREDENTIALS_PATH;
       }
       return res;
     }
@@ -654,6 +687,22 @@ async function callTool(name, args) {
       };
     }
 
+    case "set_default_token": {
+      const token = args.token === "pyUSD" ? "pyUSD" : "USDC";
+      DEFAULT_TOKEN = token;
+      saveState();
+      return {
+        status: 200,
+        body: {
+          success: true,
+          default_token: DEFAULT_TOKEN,
+          message: DEFAULT_TOKEN === "pyUSD"
+            ? "Default token set to pyUSD. New jobs and offers will use pyUSD by default, enabling PayPal and Venmo compatibility for workers."
+            : "Default token set to USDC. New jobs and offers will use USDC by default.",
+        },
+      };
+    }
+
     // ── Auto-pay proof acceptance ────────────────────────────────────────
     case "accept_proof_autopay": {
       if (!WALLET_KEY) {
@@ -762,6 +811,7 @@ async function callTool(name, args) {
 
     // ── Jobs ─────────────────────────────────────────────────────────────
     case "post_job":
+      if (!args.type) args.type = DEFAULT_TOKEN;
       return apiRequest("POST", "/jobs", args);
 
     case "delete_job":
@@ -814,6 +864,7 @@ async function callTool(name, args) {
 
     // ── Offers ───────────────────────────────────────────────────────────
     case "send_offer":
+      if (!args.type) args.type = DEFAULT_TOKEN;
       return apiRequest("POST", "/offers", args);
 
     case "cancel_offer":

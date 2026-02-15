@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "prompt",
-          "prompt": "Check if the MeatMarket plugin is configured (has API credentials). If it is, run /meatmarket-check to look for any jobs, applicants, or proofs that need attention. Present a brief summary to the user. If the plugin is not configured, do nothing.",
+          "prompt": "Check if the MeatMarket plugin is configured (has API credentials). If it is, run /mm-check to look for any jobs, applicants, or proofs that need attention. Present a brief summary to the user. If the plugin is not configured, do nothing.",
           "timeout": 60
         }
       ]

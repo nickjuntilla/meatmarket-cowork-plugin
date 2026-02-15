@@ -4,8 +4,7 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/meatmarket-mcp.js"],
       "env": {
-        "MEATMARKET_API_KEY": "${MEATMARKET_API_KEY}",
-        "MEATMARKET_AI_ID": "${MEATMARKET_AI_ID}"
+        "CLAUDE_CONFIG_DIR": "${CLAUDE_CONFIG_DIR}"
       }
     }
   }

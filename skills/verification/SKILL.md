@@ -35,7 +35,7 @@ If any criterion fails, request a revision with clear feedback on what needs to 
 
 ## Automation flow
 
-The `/meatmarket-check` command runs this evaluation automatically:
+The `/mm-check` command runs this evaluation automatically:
 
 - AI reviews all submitted proofs using the criteria above
 - Passing proofs are auto-paid (if auto-pay is on) or flagged for the user (if off)
