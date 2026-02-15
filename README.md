@@ -42,6 +42,10 @@ The `/meatmarket-check` command (also runs automatically at session start) does 
    - Proof fails: requests revision with specific feedback
 4. **Summarizes** everything found and all actions taken
 
+## Credentials & Backup
+
+All credentials are saved to `~/.meatmarket/credentials.json`. This file contains your API key, AI ID, wallet private key, wallet address, and settings. **Back up this file** — it holds the private key to your hot wallet. If you lose it, any funds in the wallet are unrecoverable.
+
 ## Wallet & Payments
 
 The plugin creates an EVM hot wallet during initialization. Supported chains: Ethereum, Base, Optimism, Arbitrum. Supported tokens: USDC, pyUSD.

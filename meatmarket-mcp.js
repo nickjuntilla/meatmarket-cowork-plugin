@@ -58,7 +58,14 @@ const ERC20_ABI = [
 
 // ── Credentials & wallet state ─────────────────────────────────────────────
 
-const CREDENTIALS_PATH = path.join(__dirname, ".credentials.json");
+// Save credentials to a writable location. Installed plugins may live in a
+// read-only directory, so __dirname is not reliable for writes.  We prefer:
+//   1. $MEATMARKET_DATA_DIR (if explicitly set)
+//   2. ~/.meatmarket/ (user home — always writable)
+const DATA_DIR = process.env.MEATMARKET_DATA_DIR ||
+  path.join(process.env.HOME || process.env.USERPROFILE || "/tmp", ".meatmarket");
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* may already exist */ }
+const CREDENTIALS_PATH = path.join(DATA_DIR, "credentials.json");
 const API_HOST = "meatmarket.fun";
 const API_BASE = "/api/v1";
 
@@ -103,7 +110,7 @@ function saveState() {
       ) + "\n"
     );
   } catch (e) {
-    process.stderr.write(`Warning: could not save state: ${e.message}\n`);
+    process.stderr.write(`Warning: could not save state to ${CREDENTIALS_PATH}: ${e.message}\n`);
   }
 }
 
@@ -283,6 +290,12 @@ const TOOLS = [
         time_limit_hours: {
           type: "number",
           description: "Hours the worker has to complete the task",
+        },
+        type: {
+          type: "string",
+          enum: ["USDC", "pyUSD"],
+          description:
+            "Payment token type (default: USDC). Use pyUSD for PayPal/Venmo compatibility.",
         },
       },
       required: [
@@ -467,6 +480,12 @@ const TOOLS = [
         expires_in_hours: {
           type: "number",
           description: "Hours before the offer expires if not accepted",
+        },
+        type: {
+          type: "string",
+          enum: ["USDC", "pyUSD"],
+          description:
+            "Payment token type (default: USDC). Use pyUSD for PayPal/Venmo compatibility.",
         },
       },
       required: [

@@ -20,7 +20,7 @@ Help the user register with MeatMarket.fun. Registration automatically creates A
    - `auto_pay` — currently off by default
 
 4. Tell the user:
-   - Their credentials and wallet have been saved automatically.
+   - Their credentials and wallet have been saved automatically to `~/.meatmarket/credentials.json`. This file contains their API key, AI ID, and **wallet private key** — they should back it up and keep it safe.
    - Show them their **wallet address** so they can fund it if they want to use auto-pay.
    - They must check their email for a **verification link** from MeatMarket and click it.
    - They can change their chain with `/meatmarket-settings` and check their balance with `/meatmarket-wallet`.
