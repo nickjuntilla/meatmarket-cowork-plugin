@@ -1,0 +1,26 @@
+{
+  "name": "meatmarket",
+  "owner": {
+    "name": "MeatMarket",
+    "email": "info@meatmarket.fun"
+  },
+  "metadata": {
+    "description": "Hire and pay real humans directly from Claude Cowork",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "meatmarket",
+      "source": ".",
+      "description": "Hire and manage human workers through MeatMarket.fun — search talent, post jobs, verify work, send messages, and settle payments with AI-powered evaluation and auto-pay.",
+      "version": "1.5.0",
+      "author": {
+        "name": "MeatMarket"
+      },
+      "homepage": "https://meatmarket.fun",
+      "repository": "https://github.com/nickjuntilla/meatmarket-cowork-plugin",
+      "keywords": ["meatmarket", "hiring", "workforce", "blockchain", "gig", "paypal", "venmo", "crypto"],
+      "category": "productivity"
+    }
+  ]
+}
